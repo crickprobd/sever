@@ -1,4 +1,4 @@
-require("dotenv").config();
+    require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -16,32 +16,12 @@ const io = new Server(server, {
   perMessageDeflate: true,
 });
 
-// Global state (userId অনুযায়ী আলাদা আলাদা state থাকবে)
 const state = Object.create(null);
 const keyFor = (userId) => (userId && String(userId).trim()) || "default";
 
 // Store pending updates (to batch within 500ms)
 let pendingUpdates = {};
 
-// 🔹 Helper: Find differences between two objects (deep diff)
-function diffObjects(oldObj, newObj) {
-  const changes = {};
-
-  for (const key in newObj) {
-    if (typeof newObj[key] === "object" && newObj[key] !== null) {
-      const nestedDiff = diffObjects(oldObj[key] || {}, newObj[key]);
-      if (Object.keys(nestedDiff).length > 0) {
-        changes[key] = nestedDiff;
-      }
-    } else if (newObj[key] !== oldObj[key]) {
-      changes[key] = newObj[key];
-    }
-  }
-
-  return changes;
-}
-
-// 🔹 Schedule update batching
 function scheduleUpdate(userId, updateType, data) {
   if (!pendingUpdates[userId]) {
     pendingUpdates[userId] = [];
@@ -49,7 +29,7 @@ function scheduleUpdate(userId, updateType, data) {
   pendingUpdates[userId].push({ type: updateType, data });
 }
 
-// 🔹 প্রতি 500ms এ সব পেন্ডিং আপডেট bulk আকারে পাঠানো হবে
+// Every 500ms send all pending updates at once
 setInterval(() => {
   for (const userId in pendingUpdates) {
     const updates = pendingUpdates[userId];
@@ -60,7 +40,7 @@ setInterval(() => {
   }
 }, 500);
 
-// 🔹 REST API
+// REST API
 app.get("/api/health", (req, res) => {
   res.send("Server is healthy!");
 });
@@ -70,11 +50,10 @@ app.get("/api/state/:userId?", (req, res) => {
   res.json(state[keyFor(userId)] || {});
 });
 
-// 🔹 Socket.IO logic
+// Socket.IO logic
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  // Join room (per userId)
   socket.on("join", (userId) => {
     const key = keyFor(userId);
     if (!state[key]) {
@@ -84,7 +63,6 @@ io.on("connection", (socket) => {
     socket.emit("init-state", state[key]);
   });
 
-  // Publish updates (diff-based)
   socket.on("publish-update", ({ userId, matchData, overlays }) => {
     const key = keyFor(userId);
     if (!state[key]) {
@@ -92,23 +70,14 @@ io.on("connection", (socket) => {
     }
 
     const changes = {};
-
-    if (matchData) {
-      const diff = diffObjects(state[key].matchData, matchData);
-      if (Object.keys(diff).length > 0) {
-        state[key].matchData = { ...state[key].matchData, ...matchData };
-        changes.matchData = diff;
-      }
+    if (matchData && JSON.stringify(matchData) !== JSON.stringify(state[key].matchData)) {
+      state[key].matchData = matchData;
+      changes.matchData = matchData;
     }
-
-    if (overlays) {
-      const diff = diffObjects(state[key].overlays, overlays);
-      if (Object.keys(diff).length > 0) {
-        state[key].overlays = { ...state[key].overlays, ...overlays };
-        changes.overlays = diff;
-      }
+    if (overlays && JSON.stringify(overlays) !== JSON.stringify(state[key].overlays)) {
+      state[key].overlays = overlays;
+      changes.overlays = overlays;
     }
-
     state[key].updatedAt = Date.now();
 
     if (Object.keys(changes).length > 0) {
@@ -116,7 +85,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Publish wagon data (পুরোটা পাঠানো হচ্ছে আপাতত)
   socket.on("publish-wagon", ({ userId, wagonData }) => {
     const key = keyFor(userId);
     if (!state[key]) {
@@ -135,7 +103,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// 🔹 Start server
+// Start server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Optimized Backend listening on ${PORT}`);
